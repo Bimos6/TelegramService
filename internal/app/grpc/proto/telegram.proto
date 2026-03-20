@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package telegram;
+
+option go_package = "./;telegram";
+
+service TelegramService {
+    rpc Ping(PingRequest) returns (PingResponse);
+}
+
+message PingRequest {}
+message PingResponse {
+    string message = 1;
+}
