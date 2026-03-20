@@ -1,36 +1,37 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"log"
 	"net"
+	"os"
 
 	pb "github.com/Bimos6/telegram-service/internal/app/grpc/proto"
 
+	"github.com/Bimos6/telegram-service/internal/config"
+	"github.com/Bimos6/telegram-service/pkg/logger"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 )
 
 type server struct {
 	pb.UnimplementedTelegramServiceServer
 }
 
-func (s *server) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
-	return &pb.PingResponse{Message: "pong"}, nil
-}
-
 func main() {
-	lis, err := net.Listen("tcp", ":50051")
+	cfg := config.Load()
+
+	logger.Init("debug")
+	log := logger.Get()
+
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
 	if err != nil {
-		log.Fatal(err)
+		log.Error("Failed to listen", "error", err)
+		os.Exit(1)
 	}
 
 	s := grpc.NewServer()
 	pb.RegisterTelegramServiceServer(s, &server{})
-	reflection.Register(s)
 
-	fmt.Println("Server listening on :50051")
+	fmt.Println("Server listening on :", cfg.GRPCPort)
 	if err := s.Serve(lis); err != nil {
 		log.Fatal(err)
 	}
