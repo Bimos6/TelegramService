@@ -6,10 +6,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var log *logrus.Logger
+var defaultLogger Logger
+
+type logrusLogger struct {
+	entry *logrus.Entry
+}
 
 func Init(level string) {
-	log = logrus.New()
+	log := logrus.New()
 
 	log.SetOutput(os.Stdout)
 
@@ -31,59 +35,67 @@ func Init(level string) {
 	default:
 		log.SetLevel(logrus.InfoLevel)
 	}
+
+	defaultLogger = &logrusLogger{
+		entry: logrus.NewEntry(log),
+	}
 }
 
-func Get() *logrus.Logger {
-	if log == nil {
+func Get() Logger {
+	if defaultLogger == nil {
 		Init("info")
 	}
-	return log
+	return defaultLogger
 }
 
-func Debug(args ...interface{}) {
-	Get().Debug(args...)
+func (l *logrusLogger) Debug(args ...interface{}) {
+	l.entry.Debug(args...)
 }
 
-func Info(args ...interface{}) {
-	Get().Info(args...)
+func (l *logrusLogger) Info(args ...interface{}) {
+	l.entry.Info(args...)
 }
 
-func Warn(args ...interface{}) {
-	Get().Warn(args...)
+func (l *logrusLogger) Warn(args ...interface{}) {
+	l.entry.Warn(args...)
 }
 
-func Error(args ...interface{}) {
-	Get().Error(args...)
+func (l *logrusLogger) Error(args ...interface{}) {
+	l.entry.Error(args...)
 }
 
-func Fatal(args ...interface{}) {
-	Get().Fatal(args...)
+func (l *logrusLogger) Fatal(args ...interface{}) {
+	l.entry.Fatal(args...)
 }
 
-func Debugf(format string, args ...interface{}) {
-	Get().Debugf(format, args...)
+func (l *logrusLogger) Debugf(format string, args ...interface{}) {
+	l.entry.Debugf(format, args...)
 }
 
-func Infof(format string, args ...interface{}) {
-	Get().Infof(format, args...)
+func (l *logrusLogger) Infof(format string, args ...interface{}) {
+	l.entry.Infof(format, args...)
 }
 
-func Warnf(format string, args ...interface{}) {
-	Get().Warnf(format, args...)
+func (l *logrusLogger) Warnf(format string, args ...interface{}) {
+	l.entry.Warnf(format, args...)
 }
 
-func Errorf(format string, args ...interface{}) {
-	Get().Errorf(format, args...)
+func (l *logrusLogger) Errorf(format string, args ...interface{}) {
+	l.entry.Errorf(format, args...)
 }
 
-func Fatalf(format string, args ...interface{}) {
-	Get().Fatalf(format, args...)
+func (l *logrusLogger) Fatalf(format string, args ...interface{}) {
+	l.entry.Fatalf(format, args...)
 }
 
-func WithField(key string, value interface{}) *logrus.Entry {
-	return Get().WithField(key, value)
+func (l *logrusLogger) WithField(key string, value interface{}) Logger {
+	return &logrusLogger{
+		entry: l.entry.WithField(key, value),
+	}
 }
 
-func WithFields(fields logrus.Fields) *logrus.Entry {
-	return Get().WithFields(fields)
+func (l *logrusLogger) WithFields(fields logrus.Fields) Logger {
+	return &logrusLogger{
+		entry: l.entry.WithFields(fields),
+	}
 }
