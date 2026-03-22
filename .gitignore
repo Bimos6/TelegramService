@@ -1,4 +1,6 @@
 .env
+*.pb.go
+*_grpc.pb.go
 
 *.exe
 *.exe~
