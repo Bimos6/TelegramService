@@ -12,7 +12,7 @@ type logrusLogger struct {
 	entry *logrus.Entry
 }
 
-func Init(level string) {
+func Init(level string) Logger {
 	log := logrus.New()
 
 	log.SetOutput(os.Stdout)
@@ -39,6 +39,8 @@ func Init(level string) {
 	defaultLogger = &logrusLogger{
 		entry: logrus.NewEntry(log),
 	}
+
+	return defaultLogger
 }
 
 func Get() Logger {
