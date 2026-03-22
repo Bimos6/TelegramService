@@ -8,9 +8,11 @@ import (
 )
 
 type Config struct {
-	GRPCPort int
-	AppID    int
-	AppHash  string
+	GRPCPort   int
+	AppID      int
+	AppHash    string
+	LogLevel   string
+	SessionDir string
 }
 
 func Load() *Config {
@@ -26,9 +28,21 @@ func Load() *Config {
 	appID, _ := strconv.Atoi(os.Getenv("TELEGRAM_APP_ID"))
 	appHash := os.Getenv("TELEGRAM_APP_HASH")
 
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+
+	sessionDir := os.Getenv("SESSION_DIR")
+	if sessionDir == "" {
+		sessionDir = "./sessions"
+	}
+
 	return &Config{
-		GRPCPort: port,
-		AppID:    appID,
-		AppHash:  appHash,
+		GRPCPort:   port,
+		AppID:      appID,
+		AppHash:    appHash,
+		LogLevel:   logLevel,
+		SessionDir: sessionDir,
 	}
 }
