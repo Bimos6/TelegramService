@@ -7,6 +7,7 @@ option go_package = "./;telegram";
 service TelegramService {
     rpc Ping(PingRequest) returns (PingResponse);
     rpc CreateTestSession(CreateTestSessionRequest) returns (CreateTestSessionResponse);
+    rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
 }
 
 message PingRequest {}
@@ -18,4 +19,9 @@ message CreateTestSessionRequest{}
 message CreateTestSessionResponse{
     string session_id = 1;
     string message = 2;
+}
+
+message ListSessionsRequest {}
+message ListSessionsResponse {
+  repeated string session_ids = 1;
 }

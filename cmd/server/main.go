@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"sync"
 
 	pb "github.com/Bimos6/telegram-service/internal/app/grpc/proto"
 
 	"github.com/Bimos6/telegram-service/internal/config"
+	"github.com/Bimos6/telegram-service/internal/repository"
 	"github.com/Bimos6/telegram-service/internal/session"
 	"github.com/Bimos6/telegram-service/pkg/logger"
 	"google.golang.org/grpc"
@@ -18,9 +18,8 @@ import (
 
 type server struct {
 	pb.UnimplementedTelegramServiceServer
-	log      logger.Logger
-	sessions map[string]*session.Session
-	mu       sync.RWMutex
+	log  logger.Logger
+	repo repository.SessionRepository
 }
 
 func (s *server) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
@@ -34,9 +33,10 @@ func (s *server) CreateTestSession(ctx context.Context, req *pb.CreateTestSessio
 		return nil, err
 	}
 
-	s.mu.Lock()
-	s.sessions[sess.ID()] = sess
-	s.mu.Unlock()
+	if err := s.repo.Save(ctx, sess); err != nil {
+		sess.Stop()
+		return nil, err
+	}
 
 	go func() {
 		for msg := range sess.Messages() {
@@ -46,18 +46,24 @@ func (s *server) CreateTestSession(ctx context.Context, req *pb.CreateTestSessio
 
 	return &pb.CreateTestSessionResponse{
 		SessionId: sess.ID(),
-		Message:   "Session created, messages every 5 seconds",
+		Message:   "Session created",
 	}, nil
+}
+
+func (s *server) ListSessions(ctx context.Context, req *pb.ListSessionsRequest) (*pb.ListSessionsResponse, error) {
+	sessions, _ := s.repo.List(ctx)
+	ids := make([]string, len(sessions))
+	for i, sess := range sessions {
+		ids[i] = sess.ID()
+	}
+	return &pb.ListSessionsResponse{SessionIds: ids}, nil
 }
 
 func main() {
 	cfg := config.Load()
-	log := logger.Init(cfg.LogLevel)
+	log := logger.Init("debug")
 
-	if err := os.MkdirAll(cfg.SessionDir, 0700); err != nil {
-		log.WithField("error", err).Error("Failed to create session directory")
-		os.Exit(1)
-	}
+	repo := repository.NewRepository(log)
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
 	if err != nil {
@@ -67,8 +73,8 @@ func main() {
 
 	s := grpc.NewServer()
 	pb.RegisterTelegramServiceServer(s, &server{
-		log:      log,
-		sessions: make(map[string]*session.Session),
+		log:  log,
+		repo: repo,
 	})
 
 	reflection.Register(s)
