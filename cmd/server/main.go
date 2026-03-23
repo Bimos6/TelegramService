@@ -7,7 +7,6 @@ import (
 	"os"
 
 	pb "github.com/Bimos6/telegram-service/internal/app/grpc/proto"
-
 	"github.com/Bimos6/telegram-service/internal/config"
 	"github.com/Bimos6/telegram-service/internal/repository"
 	"github.com/Bimos6/telegram-service/internal/session"
@@ -18,8 +17,8 @@ import (
 
 type server struct {
 	pb.UnimplementedTelegramServiceServer
-	log  logger.Logger
-	repo repository.SessionRepository
+	log     logger.Logger
+	manager *session.Manager
 }
 
 func (s *server) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
@@ -28,15 +27,12 @@ func (s *server) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingRespons
 }
 
 func (s *server) CreateTestSession(ctx context.Context, req *pb.CreateTestSessionRequest) (*pb.CreateTestSessionResponse, error) {
-	sess := session.NewSession(s.log)
-	if err := sess.Start(ctx); err != nil {
+	sessionID, err := s.manager.CreateSession(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := s.repo.Save(ctx, sess); err != nil {
-		sess.Stop()
-		return nil, err
-	}
+	sess, _ := s.manager.GetSession(ctx, sessionID)
 
 	go func() {
 		for msg := range sess.Messages() {
@@ -45,13 +41,13 @@ func (s *server) CreateTestSession(ctx context.Context, req *pb.CreateTestSessio
 	}()
 
 	return &pb.CreateTestSessionResponse{
-		SessionId: sess.ID(),
+		SessionId: sessionID,
 		Message:   "Session created",
 	}, nil
 }
 
 func (s *server) ListSessions(ctx context.Context, req *pb.ListSessionsRequest) (*pb.ListSessionsResponse, error) {
-	sessions, _ := s.repo.List(ctx)
+	sessions, _ := s.manager.ListSessions(ctx)
 	ids := make([]string, len(sessions))
 	for i, sess := range sessions {
 		ids[i] = sess.ID()
@@ -61,9 +57,10 @@ func (s *server) ListSessions(ctx context.Context, req *pb.ListSessionsRequest) 
 
 func main() {
 	cfg := config.Load()
-	log := logger.Init("debug")
+	log := logger.Init(cfg.LogLevel)
 
 	repo := repository.NewRepository(log)
+	manager := session.NewManager(repo, cfg, log)
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
 	if err != nil {
@@ -73,8 +70,8 @@ func main() {
 
 	s := grpc.NewServer()
 	pb.RegisterTelegramServiceServer(s, &server{
-		log:  log,
-		repo: repo,
+		log:     log,
+		manager: manager,
 	})
 
 	reflection.Register(s)

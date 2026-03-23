@@ -8,11 +8,11 @@ import (
 )
 
 type Config struct {
-	GRPCPort   int
-	AppID      int
-	AppHash    string
-	LogLevel   string
-	SessionDir string
+	GRPCPort    int
+	AppID       int
+	AppHash     string
+	LogLevel    string
+	MaxSessions int
 }
 
 func Load() *Config {
@@ -33,16 +33,18 @@ func Load() *Config {
 		logLevel = "info"
 	}
 
-	sessionDir := os.Getenv("SESSION_DIR")
-	if sessionDir == "" {
-		sessionDir = "./sessions"
+	maxSessions := 10
+	if ms := os.Getenv("MAX_SESSIONS"); ms != "" {
+		if i, err := strconv.Atoi(ms); err == nil && i > 0 {
+			maxSessions = i
+		}
 	}
 
 	return &Config{
-		GRPCPort:   port,
-		AppID:      appID,
-		AppHash:    appHash,
-		LogLevel:   logLevel,
-		SessionDir: sessionDir,
+		GRPCPort:    port,
+		AppID:       appID,
+		AppHash:     appHash,
+		LogLevel:    logLevel,
+		MaxSessions: maxSessions,
 	}
 }
