@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	telegrpc "github.com/Bimos6/telegram-service/internal/app/grpc"
 	pb "github.com/Bimos6/telegram-service/internal/app/grpc/proto"
 	"github.com/Bimos6/telegram-service/internal/config"
 	"github.com/Bimos6/telegram-service/internal/repository"
@@ -14,46 +18,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
-
-type server struct {
-	pb.UnimplementedTelegramServiceServer
-	log     logger.Logger
-	manager *session.Manager
-}
-
-func (s *server) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
-	s.log.Info("Ping received")
-	return &pb.PingResponse{Message: "pong"}, nil
-}
-
-func (s *server) CreateTestSession(ctx context.Context, req *pb.CreateTestSessionRequest) (*pb.CreateTestSessionResponse, error) {
-	sessionID, err := s.manager.CreateSession(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	sess, _ := s.manager.GetSession(ctx, sessionID)
-
-	go func() {
-		for msg := range sess.Messages() {
-			s.log.WithField("message", msg.Text).Info("Test message received")
-		}
-	}()
-
-	return &pb.CreateTestSessionResponse{
-		SessionId: sessionID,
-		Message:   "Session created",
-	}, nil
-}
-
-func (s *server) ListSessions(ctx context.Context, req *pb.ListSessionsRequest) (*pb.ListSessionsResponse, error) {
-	sessions, _ := s.manager.ListSessions(ctx)
-	ids := make([]string, len(sessions))
-	for i, sess := range sessions {
-		ids[i] = sess.ID()
-	}
-	return &pb.ListSessionsResponse{SessionIds: ids}, nil
-}
 
 func main() {
 	cfg := config.Load()
@@ -68,17 +32,40 @@ func main() {
 		os.Exit(1)
 	}
 
-	s := grpc.NewServer()
-	pb.RegisterTelegramServiceServer(s, &server{
-		log:     log,
-		manager: manager,
-	})
+	grpcServer := grpc.NewServer()
+	pb.RegisterTelegramServiceServer(grpcServer, telegrpc.NewServer(manager, log))
 
-	reflection.Register(s)
+	reflection.Register(grpcServer)
 
-	log.WithField("port", cfg.GRPCPort).Info("Server starting")
-	if err := s.Serve(lis); err != nil {
-		log.WithField("error", err).Error("Server failed")
-		os.Exit(1)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		log.WithField("port", cfg.GRPCPort).Info("Server starting")
+		if err := grpcServer.Serve(lis); err != nil {
+			log.WithField("error", err).Error("Server failed")
+			os.Exit(1)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Info("Shutting down...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	manager.StopAll(shutdownCtx)
+
+	stopped := make(chan struct{})
+	go func() {
+		grpcServer.GracefulStop()
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+		log.Info("Server stopped")
+	case <-time.After(5 * time.Second):
+		log.Warn("Force stopping")
+		grpcServer.Stop()
 	}
 }

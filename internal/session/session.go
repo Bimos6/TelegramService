@@ -46,7 +46,7 @@ func (s *Session) setState(state models.SessionState) {
 }
 
 func (s *Session) Start(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 
 	s.log.WithField("session_id", s.id).Info("Starting session")
