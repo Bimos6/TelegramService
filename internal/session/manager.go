@@ -22,23 +22,34 @@ func NewManager(repo SessionRepository, cfg *config.Config, log logger.Logger) *
 	}
 }
 
-func (m *Manager) CreateSession(ctx context.Context) (string, error) {
-	count, _ := m.repo.Count(ctx)
-	if count >= m.cfg.MaxSessions {
-		return "", fmt.Errorf("max sessions limit reached: %d", m.cfg.MaxSessions)
+func (m *Manager) CreateSession(ctx context.Context) (string, string, error) {
+	count, err := m.repo.Count(ctx)
+	if err != nil {
+		return "", "", err
 	}
 
-	sess := NewSession(m.log)
+	if count >= m.cfg.MaxSessions {
+		return "", "", fmt.Errorf("max sessions limit reached: %d", m.cfg.MaxSessions)
+	}
+
+	sess := NewSession(m.cfg.AppID, m.cfg.AppHash, m.log)
 	if err := sess.Start(ctx); err != nil {
-		return "", err
+		return "", "", err
+	}
+
+	qrCode, err := sess.GetQRCode()
+	if err != nil {
+		sess.Stop()
+		return "", "", err
 	}
 
 	if err := m.repo.Save(ctx, sess); err != nil {
-		return "", err
+		sess.Stop()
+		return "", "", err
 	}
 
 	m.log.WithField("session_id", sess.ID()).Info("Session created")
-	return sess.ID(), nil
+	return sess.ID(), qrCode, nil
 }
 
 func (m *Manager) GetSession(ctx context.Context, id string) (*Session, error) {
@@ -54,16 +65,11 @@ func (m *Manager) DeleteSession(ctx context.Context, id string) error {
 	return m.repo.Delete(ctx, id)
 }
 
-func (m *Manager) ListSessions(ctx context.Context) ([]*Session, error) {
+func (m *Manager) StopAll(ctx context.Context) error {
 	sessions, err := m.repo.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list sessions: %w", err)
+		return err
 	}
-	return sessions, nil
-}
-
-func (m *Manager) StopAll(ctx context.Context) error {
-	sessions, _ := m.repo.List(ctx)
 	for _, sess := range sessions {
 		sess.Stop()
 	}

@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/Bimos6/telegram-service/internal/models"
+	"github.com/Bimos6/telegram-service/internal/telegram"
 	"github.com/Bimos6/telegram-service/pkg/logger"
 	"github.com/google/uuid"
 )
 
 type Session struct {
 	id       string
+	client   *telegram.Client
 	state    models.SessionState
 	stateMu  sync.RWMutex
 	messages chan models.Message
@@ -20,12 +21,14 @@ type Session struct {
 	cancel   context.CancelFunc
 }
 
-func NewSession(log logger.Logger) *Session {
+func NewSession(appID int, appHash string, log logger.Logger) *Session {
+	id := uuid.New().String()
 	return &Session{
-		id:       uuid.New().String(),
+		id:       id,
+		client:   telegram.NewClient(id, appID, appHash, log),
 		state:    models.SessionStateInitializing,
 		messages: make(chan models.Message, 100),
-		log:      log.WithField("component", "session"),
+		log:      log.WithField("component", "session").WithField("session_id", id),
 	}
 }
 
@@ -40,37 +43,31 @@ func (s *Session) State() models.SessionState {
 }
 
 func (s *Session) setState(state models.SessionState) {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	s.state = state
 }
 
 func (s *Session) Start(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
 
-	s.log.WithField("session_id", s.id).Info("Starting session")
+	s.log.Info("Starting session")
+
+	if err := s.client.Connect(ctx); err != nil {
+		s.log.WithField("error", err).Error("Failed to connect")
+		return err
+	}
+
 	s.setState(models.SessionStateReady)
+	s.log.Info("Session started")
 
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-
-		msgID := int64(1)
-		for {
+		for msg := range s.client.Messages() {
 			select {
-			case <-ctx.Done():
-				s.log.WithField("session_id", s.id).Debug("Message generator stopped")
-				return
-			case <-ticker.C:
-				s.messages <- models.Message{
-					ID:        msgID,
-					From:      "test_bot",
-					Text:      fmt.Sprintf("Test message #%d", msgID),
-					Timestamp: time.Now(),
-					SessionID: s.id,
-				}
-				msgID++
+			case s.messages <- msg:
+			default:
+				s.log.Warn("Message channel full")
 			}
 		}
 	}()
@@ -79,11 +76,12 @@ func (s *Session) Start(ctx context.Context) error {
 }
 
 func (s *Session) Stop() error {
-	s.log.WithField("session_id", s.id).Info("Stopping session")
+	s.log.Info("Stopping session")
 	s.setState(models.SessionStateClosed)
 	if s.cancel != nil {
 		s.cancel()
 	}
+	s.client.Disconnect()
 	close(s.messages)
 	return nil
 }
@@ -92,10 +90,7 @@ func (s *Session) SendMessage(ctx context.Context, text string) (int64, error) {
 	if s.State() != models.SessionStateReady {
 		return 0, fmt.Errorf("session not ready")
 	}
-
-	msgID := time.Now().UnixNano()
-	s.log.WithField("session_id", s.id).WithField("text", text).Info("Sending message")
-	return msgID, nil
+	return s.client.SendMessage(ctx, "@me", text)
 }
 
 func (s *Session) Messages() <-chan models.Message {
@@ -104,5 +99,5 @@ func (s *Session) Messages() <-chan models.Message {
 
 func (s *Session) GetQRCode() (string, error) {
 	s.setState(models.SessionStateWaitingQR)
-	return "tg://login?token=mock_token", nil
+	return s.client.GetQRCode(context.Background())
 }
