@@ -6,6 +6,7 @@
 
 ## Архитектура
 
+<img width="968" height="603" alt="image" src="https://github.com/user-attachments/assets/7e3298b3-778e-42b1-a3ef-00ece72ceebe" />
 
 
 ### Ключевые архитектурные решения
