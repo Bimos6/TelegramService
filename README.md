@@ -31,7 +31,7 @@
 
 ```bash
 # 1. Клонирование репозитория
-git clone https://github.com/Bimos6/telegram-service.git
+git clone https://github.com/Bimos6/TelegramService.git
 cd telegram-service
 
 # 2. Копирование .env
