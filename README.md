@@ -42,7 +42,7 @@ go mod download
 
 # 4. Генерация protobuf кода
 cd .\internal\app\grpc\proto\
-protoc --go_out=. --go-grpc_out=. internal/api/proto/telegram.proto
+protoc --go_out=. --go-grpc_out=. telegram.proto
 # выход в корень
 cd ../../../..
 
