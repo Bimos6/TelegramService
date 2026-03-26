@@ -28,14 +28,11 @@ func NewServer(manager *session.Manager, log logger.Logger) *Server {
 func (s *Server) CreateSession(ctx context.Context, req *pb.CreateSessionRequest) (*pb.CreateSessionResponse, error) {
 	s.log.Info("CreateSession called")
 
-	sessionID, err := s.manager.CreateSession(ctx)
+	sessionID, qrCode, err := s.manager.CreateSession(ctx)
 	if err != nil {
 		s.log.WithField("error", err).Error("Failed to create session")
 		return nil, status.Errorf(codes.Internal, "failed: %v", err)
 	}
-
-	sess, _ := s.manager.GetSession(ctx, sessionID)
-	qrCode, _ := sess.GetQRCode()
 
 	return &pb.CreateSessionResponse{
 		SessionId: sessionID,

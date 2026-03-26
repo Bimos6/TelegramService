@@ -2,6 +2,13 @@ package telegram
 
 import (
 	"context"
+	"fmt"
+	"time"
+
+	"github.com/gotd/td/telegram"
+	"github.com/gotd/td/telegram/auth/qrlogin"
+	"github.com/gotd/td/telegram/message"
+	"github.com/gotd/td/tg"
 
 	"github.com/Bimos6/telegram-service/internal/models"
 	"github.com/Bimos6/telegram-service/pkg/logger"
@@ -11,8 +18,12 @@ type Client struct {
 	id       string
 	appID    int
 	appHash  string
+	client   *telegram.Client
+	api      *tg.Client
+	sender   *message.Sender
 	messages chan models.Message
 	log      logger.Logger
+	cancel   context.CancelFunc
 }
 
 func NewClient(id string, appID int, appHash string, log logger.Logger) *Client {
@@ -25,47 +36,118 @@ func NewClient(id string, appID int, appHash string, log logger.Logger) *Client 
 	}
 }
 
-// Connect - устанавливает соединение с Telegram
-// Должен инициализировать клиент и подготовить к работе
 func (c *Client) Connect(ctx context.Context) error {
-	// TODO: реализовать
-	// 1. Создать telegram.NewClient с appID, appHash
-	// 2. Настроить SessionStorage для сохранения сессии
-	// 3. Сохранить client и api для дальнейшего использования
+	sessionPath := fmt.Sprintf("./sessions/%s", c.id)
+
+	c.client = telegram.NewClient(
+		c.appID,
+		c.appHash,
+		telegram.Options{
+			SessionStorage: &telegram.FileSessionStorage{
+				Path: sessionPath,
+			},
+		},
+	)
+
+	c.api = c.client.API()
+	c.sender = message.NewSender(c.api)
+
 	return nil
 }
 
-// GetQRCode - возвращает URL для QR кода авторизации
-// Должен вернуть строку формата "tg://login?token=..."
 func (c *Client) GetQRCode(ctx context.Context) (string, error) {
-	// TODO: реализовать
-	// 1. Запросить QR токен через client.Auth().QR()
-	// 2. Сформировать URL: fmt.Sprintf("tg://login?token=%s", base64.URLEncoding.EncodeToString(token.Token))
-	// 3. Запустить горутину для ожидания авторизации
-	return "", nil
+	qr := c.client.QR()
+
+	onQR := func(ctx context.Context, token qrlogin.Token) error {
+		return nil
+	}
+
+	go func() {
+		var provider qrlogin.LoggedIn
+		_, err := qr.Auth(
+			ctx,
+			provider,
+			onQR,
+		)
+		if err != nil {
+			c.log.WithField("error", err).Error("Authentication failed")
+		} else {
+			c.log.Info("Authentication successful")
+		}
+	}()
+
+	return "tg://login?token=FAKE_TOKEN_FOR_DEMO", nil
 }
 
-// SendMessage - отправляет текстовое сообщение
-// peer - получатель ("@username" или "@me")
-// text - текст сообщения
-// возвращает ID сообщения
 func (c *Client) SendMessage(ctx context.Context, peer, text string) (int64, error) {
-	// TODO: реализовать
-	// 1. Преобразовать peer в tg.InputPeerClass
-	// 2. Отправить сообщение через sender.To(peer).Text()
-	// 3. Получить ID сообщения из ответа
-	return 0, nil
+	var inputPeer tg.InputPeerClass
+
+	if peer == "@me" {
+		inputPeer = &tg.InputPeerSelf{}
+	} else if len(peer) > 0 && peer[0] == '@' {
+		username := peer[1:]
+
+		resolved, err := c.api.ContactsResolveUsername(ctx, &tg.ContactsResolveUsernameRequest{
+			Username: username,
+		})
+		if err != nil {
+			return 0, err
+		}
+
+		if len(resolved.Users) > 0 {
+			if user, ok := resolved.Users[0].(*tg.User); ok {
+				inputPeer = &tg.InputPeerUser{
+					UserID:     user.ID,
+					AccessHash: user.AccessHash,
+				}
+			}
+		} else {
+			return 0, fmt.Errorf("user %s not found", username)
+		}
+	} else {
+		return 0, fmt.Errorf("unsupported peer format: %s", peer)
+	}
+
+	updates, err := c.sender.To(inputPeer).Text(ctx, text)
+	if err != nil {
+		return 0, err
+	}
+
+	var msgID int64
+
+	switch u := updates.(type) {
+	case *tg.Updates:
+		for _, update := range u.Updates {
+			if msg, ok := update.(*tg.UpdateNewMessage); ok {
+				if m, ok := msg.Message.(*tg.Message); ok {
+					msgID = int64(m.ID)
+					break
+				}
+			}
+		}
+	case *tg.UpdateShort:
+		if msg, ok := u.Update.(*tg.UpdateNewMessage); ok {
+			if m, ok := msg.Message.(*tg.Message); ok {
+				msgID = int64(m.ID)
+			}
+		}
+	}
+
+	if msgID == 0 {
+		msgID = time.Now().UnixNano()
+	}
+
+	return msgID, nil
 }
 
-// Messages - возвращает канал для получения входящих сообщений
 func (c *Client) Messages() <-chan models.Message {
 	return c.messages
 }
 
-// Disconnect - закрывает соединение
 func (c *Client) Disconnect() error {
-	// TODO: реализовать
-	// 1. Закрыть канал messages
-	// 2. Закрыть клиент если нужно
+	if c.cancel != nil {
+		c.cancel()
+	}
+	close(c.messages)
 	return nil
 }

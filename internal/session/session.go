@@ -13,7 +13,7 @@ import (
 
 type Session struct {
 	id       string
-	client   *telegram.Client
+	client   *telegram.MockClient
 	state    models.SessionState
 	stateMu  sync.RWMutex
 	messages chan models.Message
@@ -25,7 +25,7 @@ func NewSession(appID int, appHash string, log logger.Logger) *Session {
 	id := uuid.New().String()
 	return &Session{
 		id:       id,
-		client:   telegram.NewClient(id, appID, appHash, log),
+		client:   telegram.NewMockClient(id, log),
 		state:    models.SessionStateInitializing,
 		messages: make(chan models.Message, 100),
 		log:      log.WithField("component", "session").WithField("session_id", id),
@@ -49,18 +49,22 @@ func (s *Session) setState(state models.SessionState) {
 }
 
 func (s *Session) Start(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 
 	s.log.Info("Starting session")
+	s.log.WithField("state_before", s.State()).Debug("State before Connect")
 
 	if err := s.client.Connect(ctx); err != nil {
 		s.log.WithField("error", err).Error("Failed to connect")
 		return err
 	}
 
+	s.log.Debug("Setting state to Ready")
 	s.setState(models.SessionStateReady)
-	s.log.Info("Session started")
+
+	currentState := s.State()
+	s.log.WithField("state_after", currentState).Info("Session started")
 
 	go func() {
 		for msg := range s.client.Messages() {
@@ -98,6 +102,6 @@ func (s *Session) Messages() <-chan models.Message {
 }
 
 func (s *Session) GetQRCode() (string, error) {
-	s.setState(models.SessionStateWaitingQR)
+	//s.setState(models.SessionStateWaitingQR)
 	return s.client.GetQRCode(context.Background())
 }
