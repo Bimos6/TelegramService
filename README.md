@@ -32,7 +32,7 @@
 ```bash
 # 1. Клонирование репозитория
 git clone https://github.com/Bimos6/TelegramService.git
-cd telegram-service
+cd TelegramService 
 
 # 2. Копирование .env
 cp .env.example .env
