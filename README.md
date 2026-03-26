@@ -41,6 +41,7 @@ cp .env.example .env
 go mod download
 
 # 4. Генерация protobuf кода
+cd .\internal\app\grpc\proto\
 protoc --go_out=. --go-grpc_out=. internal/api/proto/telegram.proto
 
 # 5. Запуск сервера
